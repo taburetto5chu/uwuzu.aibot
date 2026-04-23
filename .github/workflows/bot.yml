@@ -1,14 +1,14 @@
 name: Uwuzu Bot
 
 on:
-  # Cron-job.org などの外部サービスからの合図で実行
+  # Cron-job.org からの合図（repository_dispatch）
   repository_dispatch:
     types: [execute-bot]
-  # GitHub上で「Run workflow」ボタンから手動実行
+  # GitHub上での手動実行
   workflow_dispatch:
 
 env:
-  # Node.js 20 の非推奨警告を解消し、Node.js 24 で実行するための設定
+  # Node.js 20 の非推奨警告対策
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
@@ -16,28 +16,27 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. リポジトリのコードをチェックアウト（Node.js 24 対応の v4 以上を使用）
+      # 1. コードの取得
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
-      # 2. Python 環境のセットアップ（Node.js 24 対応の v5 以上を使用）
+      # 2. Python 環境のセットアップ
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.10' # 実行するPythonのバージョン
+          python-version: '3.10'
 
-      # 3. 必要なライブラリのインストール
+      # 3. ライブラリのインストール
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests google-generativeai
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
       # 4. Bot プログラムの実行
       - name: Run Bot
         env:
-          # GitHub Secrets に登録したトークンやAPIキーをプログラムに渡す
+          # GitHub Secrets の名前とプログラム内での名前を完全に一致させる
           UWUZU_TOKEN: ${{ secrets.UWUZU_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          # サーバーURLなども Secret に入れている場合はここに追加
           UWUZU_SERVER_URL: ${{ secrets.UWUZU_SERVER_URL }}
         run: python bot.py
