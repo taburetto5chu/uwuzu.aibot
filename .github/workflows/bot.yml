@@ -1,14 +1,9 @@
 name: Uwuzu Bot
 
 on:
-  # 手動で実行するためのボタンを出す設定
   workflow_dispatch:
-  
-  # Cron-job.org などの外部から合図を受け取るための設定
   repository_dispatch:
     types: [execute-bot]
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   run-bot:
@@ -21,16 +16,18 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.9'
+          # キャッシュを有効にする（実行を速くします）
+          cache: 'pip'
 
       - name: Install dependencies
         run: |
+          python -m pip install --upgrade pip
           pip install requests
 
       - name: Run Bot Script
         env:
-          # GitHub Secretsに登録した名前と一致させてください
           UWUZU_TOKEN: ${{ secrets.UWUZU_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          # あなたのサーバーのドメイン（例: dev.uwuzu.net）
-          UWUZU_DOMAIN: "あなたのサーバー名" 
+          # 直接書くか、Secretsに登録して呼び出してください
+          UWUZU_DOMAIN: ${{ secrets.UWUZU_DOMAIN }}
         run: python bot.py
