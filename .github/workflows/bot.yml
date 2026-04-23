@@ -1,36 +1,34 @@
 name: Uwuzu Bot
 
 on:
-  # Cron-job.org などの外部サービスから実行するための設定
-  repository_dispatch:
-    types: [manual-trigger]
-  
-  # GitHubのActionsタブから手動でボタンを押して実行するための設定
+  # 手動で実行するためのボタンを出す設定
   workflow_dispatch:
+  
+  # Cron-job.org などの外部から合図を受け取るための設定
+  repository_dispatch:
+    types: [execute-bot]
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    
     steps:
-      # 1. リポジトリのコード（main.pyなど）を取得
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
 
-      # 2. Pythonをセットアップ
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
+          python-version: '3.9'
 
-      # 3. 必要なライブラリをインストール
       - name: Install dependencies
         run: |
-          pip install google-generativeai requests
+          pip install requests
 
-      # 4. Botを実行（Secretsに登録したAPIキーをプログラムに渡す）
-      - name: Run main.py
+      - name: Run Bot Script
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # GitHub Secretsに登録した名前と一致させてください
           UWUZU_TOKEN: ${{ secrets.UWUZU_TOKEN }}
-        run: python main.py
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # あなたのサーバーのドメイン（例: dev.uwuzu.net）
+          UWUZU_DOMAIN: "あなたのサーバー名" 
+        run: python bot.py
