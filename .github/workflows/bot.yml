@@ -7,6 +7,8 @@ on:
   # Cron-job.org などの外部から合図を受け取るための設定
   repository_dispatch:
     types: [execute-bot]
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   run-bot:
