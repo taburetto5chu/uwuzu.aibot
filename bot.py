@@ -1,6 +1,7 @@
 import os
 import json
 import re
+import time
 import requests
 from google import genai
 from google.genai import types
@@ -8,31 +9,32 @@ from google.genai import types
 # ============================================================
 # 設定
 # ============================================================
-DOMAIN     = os.getenv("UWUZU_SERVER_URL", "").rstrip("/")
-TOKEN      = os.getenv("UWUZU_TOKEN", "")
-GEMINI_KEY = os.getenv("GEMINI_API_KEY", "")
+DOMAIN      = os.getenv("UWUZU_SERVER_URL", "").rstrip("/")
+TOKEN       = os.getenv("UWUZU_TOKEN", "")
+GEMINI_KEY  = os.getenv("GEMINI_API_KEY", "")
+CLAUDE_KEY  = os.getenv("ANTHROPIC_API_KEY", "")  # バックアップ用
 
 BOT_USERID = "uwuzu_GPT"
 PROCESSED_FILE = "processed_ids.json"
 
-# 試すモデルの優先順位リスト（上から順に試す）
+# 試すGeminiモデルの優先順位（性能順）
 GEMINI_MODELS = [
-    "gemini-2.0-flash-lite",   # 最も軽量・無料枠が多い
-    "gemini-1.5-flash-latest", # 1.5系最新
-    "gemini-2.0-flash",        # 2.0系（枯渇しやすい）
+    "gemini-2.0-flash",        # 高性能・主力
+    "gemini-2.0-flash-lite",   # 軽量・無料枠多め
+    "gemini-1.5-flash",        # 旧世代・安定
+    "gemini-1.5-flash-8b",     # 最軽量
 ]
 
 # 淫夢語録キーワード（これらが含まれる投稿は暴走モード）
 INMU_KEYWORDS = [
     "淫夢", "ホモ", "ホモクソ", "ﾎﾓｸﾞｳ", "なんで？", "そうだよ(便乗)",
     "好きでたまらない", "NG集", "本物", "野獣先輩", "いいよ来いよ",
-    "大丈夫だ問題ない", "何でそんなに", "俺の肛門", "草不可避",
-    "真夏の夜の淫夢", "オカズ", "一般人", "おっ！そうだな",
-    "ファッ!?", "お前のことが", "許してやる", "許さない",
+    "大丈夫だ問題ない", "俺の肛門", "真夏の夜の淫夢",
+    "おっ！そうだな", "ファッ!?", "許してやる", "許さない",
 ]
 
 # ============================================================
-# ボットの性格設定（通常モード）
+# ボットの性格設定
 # ============================================================
 SYSTEM_PROMPT_NORMAL = """
 あなたはuwuzuというSNSで活動するAIbot「uwuzu_GPT」です。
@@ -43,7 +45,6 @@ SYSTEM_PROMPT_NORMAL = """
 - 「淫夢語録」をごく自然に、かつさりげなく織り込む。
   1つの返答に0〜1個程度。絶対に多用しない。
   あくまで「それが淫夢語録だとわからないくらい自然に」使うこと。
-  例:「そうだよ(便乗)」「なんで？」「ﾎﾓｸﾞｳ」など
 
 【多言語対応】
 - 相手が日本語以外の言語で投稿した場合は、その言語に合わせて返答すること。
@@ -54,9 +55,6 @@ SYSTEM_PROMPT_NORMAL = """
 - 個人情報を聞き出したり、収集したりしない。
 """
 
-# ============================================================
-# ボットの性格設定（暴走モード：淫夢語録全開）
-# ============================================================
 SYSTEM_PROMPT_INMU = """
 あなたはuwuzuというSNSで活動するAIbot「uwuzu_GPT」の暴走モードです。
 相手から淫夢ネタでメンションされたため、すべての制約を解除します。
@@ -67,7 +65,6 @@ SYSTEM_PROMPT_INMU = """
 - 「野獣先輩」「ホモ」「淫夢」などのワードを積極的に使ってよい。
 - 返答は700文字以内でOK。思う存分書いてください。
 - ただし、特定個人への誹謗中傷や差別は絶対にしない。
-- このモードは今回の返答1回限りです。
 """
 
 # ============================================================
@@ -86,34 +83,34 @@ def save_processed(ids: set):
         json.dump(recent, f, indent=2)
 
 def git_commit_processed():
-    """処理済みIDファイルをGitにコミット・プッシュして永続化する"""
+    """処理済みIDをGitにコミット・プッシュ（競合対策でpull --rebaseしてからpush）"""
     os.system('git config user.email "bot@uwuzu-gpt.local"')
     os.system('git config user.name "uwuzu_GPT Bot"')
     os.system(f'git add {PROCESSED_FILE}')
-    result = os.system('git diff --cached --quiet || git commit -m "update processed_ids [skip ci]"')
-    if result == 0:
-        push_result = os.system('git push')
-        if push_result == 0:
+    diff = os.system('git diff --cached --quiet')
+    if diff != 0:
+        os.system('git commit -m "update processed_ids [skip ci]"')
+        # 競合対策：pushの前にリモートの変更を取り込む
+        os.system('git pull --rebase origin main')
+        result = os.system('git push origin main')
+        if result == 0:
             print("[OK] processed_ids.json をGitにコミット・プッシュしました。")
         else:
-            print("[WARN] git push失敗。")
+            print("[WARN] git push失敗。次回実行時に再試行されます。")
     else:
         print("[INFO] 処理済みIDに変更なし（コミット不要）。")
 
 def clean_mention(text: str) -> str:
-    """@uwuzu_GPT を除去して質問文だけ取り出す"""
     cleaned = re.sub(r"@uwuzu_GPT\b", "", text, flags=re.IGNORECASE)
     return cleaned.strip()
 
 def is_inmu_mode(text: str) -> bool:
-    """テキストに淫夢語録が含まれているか判定する"""
     for keyword in INMU_KEYWORDS:
         if keyword in text:
             return True
     return False
 
 def parse_dict_response(data) -> list:
-    """uwuzu APIの {"success": true, "0": {...}, ...} 形式をリストに変換"""
     if isinstance(data, list):
         return data
     if not isinstance(data, dict):
@@ -189,21 +186,18 @@ def mark_notifications_read():
         print(f"[WARN] 既読化失敗: {e}")
 
 # ============================================================
-# Gemini API（複数モデルでフォールバック）
+# AI API（Gemini → Claude の順でフォールバック）
 # ============================================================
-def ask_gemini(question: str, inmu: bool = False) -> str | None:
-    """
-    inmu=True のとき → 暴走モード（700文字制限）
-    inmu=False のとき → 通常モード（200文字制限）
-    """
+def ask_gemini(question: str, inmu: bool) -> str | None:
+    """Geminiで回答を生成。全モデル失敗時はNoneを返す"""
     system_prompt = SYSTEM_PROMPT_INMU if inmu else SYSTEM_PROMPT_NORMAL
-    max_chars     = 700 if inmu else 200
-    max_tokens    = 700 if inmu else 300
-    mode_label    = "【暴走モード】" if inmu else "【通常モード】"
+    max_chars  = 700 if inmu else 200
+    max_tokens = 700 if inmu else 300
 
-    print(f"[INFO] Gemini呼び出し {mode_label}")
+    if not GEMINI_KEY:
+        return None
+
     client = genai.Client(api_key=GEMINI_KEY)
-
     for model_name in GEMINI_MODELS:
         try:
             print(f"[INFO] Gemini試行: {model_name}")
@@ -221,10 +215,72 @@ def ask_gemini(question: str, inmu: bool = False) -> str | None:
             print(f"[OK] Gemini成功: {model_name} / {len(answer)}文字")
             return answer
         except Exception as e:
-            print(f"[WARN] {model_name} 失敗: {e}")
+            err_str = str(e)
+            if "429" in err_str:
+                print(f"[WARN] {model_name}: 無料枠枯渇、次のモデルへ")
+            elif "404" in err_str:
+                print(f"[WARN] {model_name}: モデルが存在しない、次のモデルへ")
+            else:
+                print(f"[WARN] {model_name} 失敗: {err_str[:100]}")
             continue
 
-    print("[ERROR] 全Geminiモデルが失敗しました。")
+    print("[WARN] Gemini全モデル失敗")
+    return None
+
+def ask_claude(question: str, inmu: bool) -> str | None:
+    """GeminiがすべてNGの場合、Claude APIで回答を生成する"""
+    if not CLAUDE_KEY:
+        print("[WARN] ANTHROPIC_API_KEYが未設定のためClaudeスキップ")
+        return None
+
+    system_prompt = SYSTEM_PROMPT_INMU if inmu else SYSTEM_PROMPT_NORMAL
+    max_chars  = 700 if inmu else 200
+    max_tokens = 700 if inmu else 300
+
+    try:
+        print("[INFO] Claude APIで回答を試みます")
+        res = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": CLAUDE_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": "claude-haiku-4-5-20251001",  # 最軽量・低コスト
+                "max_tokens": max_tokens,
+                "system": system_prompt,
+                "messages": [{"role": "user", "content": question}],
+            },
+            timeout=30,
+        )
+        res.raise_for_status()
+        data = res.json()
+        answer = data["content"][0]["text"].strip()
+        if len(answer) > max_chars:
+            answer = answer[:max_chars - 3] + "..."
+        print(f"[OK] Claude成功 / {len(answer)}文字")
+        return answer
+    except Exception as e:
+        print(f"[ERROR] Claude失敗: {e}")
+        return None
+
+def ask_ai(question: str, inmu: bool) -> str | None:
+    """Gemini → Claude の順で回答を試みる"""
+    mode = "【暴走モード】" if inmu else "【通常モード】"
+    print(f"[INFO] AI呼び出し {mode}")
+
+    # まずGeminiを試す
+    answer = ask_gemini(question, inmu)
+    if answer is not None:
+        return answer
+
+    # GeminiがだめならClaudeを試す
+    answer = ask_claude(question, inmu)
+    if answer is not None:
+        return answer
+
+    print("[ERROR] Gemini・Claude両方失敗。スキップします。")
     return None
 
 # ============================================================
@@ -245,20 +301,16 @@ def process_ueuse(uniqid: str, text: str, sender: str, processed: set) -> bool:
     if not question:
         question = "何かご用でしょうか？"
 
-    # 淫夢語録が含まれているか判定してモード切替
     inmu = is_inmu_mode(text)
     if inmu:
-        print(f"[INFO] 淫夢語録検出 → 暴走モードで返答（700文字制限）")
+        print("[INFO] 淫夢語録検出 → 暴走モード（700文字）")
 
-    answer = ask_gemini(question, inmu=inmu)
-
-    # Gemini全滅の場合はスキップ（次回リトライ）
+    answer = ask_ai(question, inmu)
     if answer is None:
-        print(f"[WARN] Geminiが全モデル失敗のため {uniqid} はスキップ（次回リトライ）")
+        print(f"[WARN] AI全滅のため {uniqid} はスキップ（次回リトライ）")
         return False
 
     reply_text = f"@{sender} {answer}"
-    # uwuzuの最大文字数（サーバー設定依存、1024以内に収める）
     if len(reply_text) > 1000:
         reply_text = reply_text[:997] + "..."
 
@@ -278,11 +330,13 @@ def main():
     if not TOKEN:
         print("[ERROR] 環境変数 UWUZU_TOKEN が未設定です。")
         return
-    if not GEMINI_KEY:
-        print("[ERROR] 環境変数 GEMINI_API_KEY が未設定です。")
+    if not GEMINI_KEY and not CLAUDE_KEY:
+        print("[ERROR] GEMINI_API_KEY と ANTHROPIC_API_KEY が両方とも未設定です。")
         return
 
     print(f"[INFO] 接続先: {DOMAIN}")
+    print(f"[INFO] Gemini: {'有効' if GEMINI_KEY else '無効'} / Claude: {'有効' if CLAUDE_KEY else '無効（ANTHROPIC_API_KEYを設定するとバックアップ利用可）'}")
+
     processed = load_processed()
     replied_count = 0
 
@@ -299,6 +353,7 @@ def main():
         mention_uniqids.add(uniqid)
         if process_ueuse(uniqid, text, sender, processed):
             replied_count += 1
+        time.sleep(1)  # API負荷軽減
 
     # 方法②：通知API（フォールバック）
     notifications = get_notifications()
@@ -319,6 +374,7 @@ def main():
             continue
         if process_ueuse(uniqid, text, sender, processed):
             replied_count += 1
+        time.sleep(1)
 
     print(f"[INFO] 返信完了: {replied_count} 件")
     mark_notifications_read()
