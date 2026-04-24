@@ -1,7 +1,11 @@
 name: uwuzu Bot Runner
 
 on:
-  workflow_dispatch: # 手動実行・Cron-job.orgからのトリガー用
+  workflow_dispatch:
+
+# ★ Gitへのpush（processed_ids.jsonの保存）に必要な権限
+permissions:
+  contents: write
 
 jobs:
   run-bot:
@@ -10,13 +14,15 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          # pushできるようにトークンを明示
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      # Node.js 24 警告対策
       - name: Set Node.js version environment
         run: echo "FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true" >> $GITHUB_ENV
 
@@ -25,26 +31,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # 処理済みIDファイルが前回のrunで保存されていればキャッシュから復元する
-      # ※ GitHub ActionsはRunごとにクリーンなので、キャッシュを使って永続化する
-      - name: Restore processed IDs cache
-        uses: actions/cache@v4
-        with:
-          path: processed_ids.json
-          key: processed-ids-${{ runner.os }}
-          restore-keys: |
-            processed-ids-
-
       - name: Run Bot
         env:
           UWUZU_SERVER_URL: ${{ secrets.UWUZU_SERVER_URL }}
           UWUZU_TOKEN: ${{ secrets.UWUZU_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python bot.py
-
-      # 実行後に処理済みIDをキャッシュに保存
-      - name: Save processed IDs cache
-        uses: actions/cache@v4
-        with:
-          path: processed_ids.json
-          key: processed-ids-${{ runner.os }}
