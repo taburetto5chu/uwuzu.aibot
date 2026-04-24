@@ -1,34 +1,50 @@
 name: uwuzu Bot Runner
 
 on:
-  workflow_dispatch: # 手動実行用
-  # Cron-job.orgからのトリガーを受け付ける設定
+  workflow_dispatch: # 手動実行・Cron-job.orgからのトリガー用
 
 jobs:
-  build:
+  run-bot:
     runs-on: ubuntu-latest
 
     steps:
-      # Node.js 24への強制移行に対応した最新のアクションを使用
       - name: Checkout Repository
-        uses: actions/checkout@v4 # v4の内部も順次更新されています
+        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12' # 2026年時点で安定しているバージョン
+          python-version: '3.12'
 
-      # ここがポイント：GitHubランナーにNode.js 24の使用を明示的に許可する（警告対策）
+      # Node.js 24 警告対策
       - name: Set Node.js version environment
         run: echo "FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true" >> $GITHUB_ENV
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install google-generativeai requests # 必要なライブラリ
+          pip install -r requirements.txt
+
+      # 処理済みIDファイルが前回のrunで保存されていればキャッシュから復元する
+      # ※ GitHub ActionsはRunごとにクリーンなので、キャッシュを使って永続化する
+      - name: Restore processed IDs cache
+        uses: actions/cache@v4
+        with:
+          path: processed_ids.json
+          key: processed-ids-${{ runner.os }}
+          restore-keys: |
+            processed-ids-
 
       - name: Run Bot
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          UWUZU_SERVER_URL: ${{ secrets.UWUZU_SERVER_URL }}
           UWUZU_TOKEN: ${{ secrets.UWUZU_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python bot.py
+
+      # 実行後に処理済みIDをキャッシュに保存
+      - name: Save processed IDs cache
+        uses: actions/cache@v4
+        with:
+          path: processed_ids.json
+          key: processed-ids-${{ runner.os }}
