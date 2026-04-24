@@ -13,7 +13,6 @@ TOKEN      = os.getenv("UWUZU_TOKEN", "")
 GEMINI_KEY = os.getenv("GEMINI_API_KEY", "")
 
 BOT_USERID = "uwuzu_GPT"
-
 PROCESSED_FILE = "processed_ids.json"
 
 # ============================================================
@@ -53,38 +52,39 @@ def load_processed() -> set:
 def save_processed(ids: set):
     recent = list(ids)[-2000:]
     with open(PROCESSED_FILE, "w") as f:
-        json.dump(recent, f)
+        json.dump(recent, f, indent=2)
+
+def git_commit_processed():
+    """処理済みIDファイルをGitにコミット・プッシュして永続化する"""
+    os.system('git config user.email "bot@uwuzu-gpt.local"')
+    os.system('git config user.name "uwuzu_GPT Bot"')
+    os.system(f'git add {PROCESSED_FILE}')
+    result = os.system(f'git diff --cached --quiet || git commit -m "update processed_ids [skip ci]"')
+    if result == 0:
+        push_result = os.system('git push')
+        if push_result == 0:
+            print("[OK] processed_ids.json をGitにコミット・プッシュしました。")
+        else:
+            print("[WARN] git push失敗。Contents: writeパーミッションを確認してください。")
+    else:
+        print("[INFO] 処理済みIDに変更なし（コミット不要）。")
 
 def clean_mention(text: str) -> str:
-    """@uwuzu_GPT を除去して質問文だけ取り出す"""
     cleaned = re.sub(r"@uwuzu_GPT\b", "", text, flags=re.IGNORECASE)
     return cleaned.strip()
 
 def parse_dict_response(data) -> list:
-    """
-    uwuzuのAPIは {"success": true, "0": {...}, "1": {...}} 形式で返してくる。
-    数字キーの値だけをリストにして返す。
-    """
+    """uwuzu APIの {"success": true, "0": {...}, ...} 形式をリストに変換"""
     if isinstance(data, list):
         return data
     if not isinstance(data, dict):
         return []
-    result = []
-    for key, val in data.items():
-        if key == "success":
-            continue
-        if isinstance(val, dict):
-            result.append(val)
-    return result
+    return [val for key, val in data.items() if key != "success" and isinstance(val, dict)]
 
 # ============================================================
 # uwuzu API 操作
 # ============================================================
 def get_mentions() -> list:
-    """
-    /api/ueuse/mentions でメンション一覧を取得する。
-    レスポンスは {"success": true, "0": {...}, ...} 形式。
-    """
     url = f"{DOMAIN}/api/ueuse/mentions"
     try:
         res = requests.post(url, json={"token": TOKEN, "limit": 25}, timeout=10)
@@ -97,10 +97,6 @@ def get_mentions() -> list:
         return []
 
 def get_notifications() -> list:
-    """
-    /api/me/notification/ で通知一覧を取得し、
-    mention/reply カテゴリのものだけ返す。
-    """
     url = f"{DOMAIN}/api/me/notification/"
     try:
         res = requests.post(url, json={"token": TOKEN, "limit": 50}, timeout=10)
@@ -114,37 +110,26 @@ def get_notifications() -> list:
         return []
 
 def get_ueuse(uniqid: str) -> dict | None:
-    """特定のユーズ（投稿）を取得する"""
     url = f"{DOMAIN}/api/ueuse/get"
     try:
         res = requests.post(url, json={"token": TOKEN, "uniqid": uniqid}, timeout=10)
         res.raise_for_status()
         data = res.json()
         print(f"[DEBUG] get_ueuse({uniqid}) raw: {str(data)[:200]}")
-        # レスポンスはリストまたは辞書の可能性がある
         if isinstance(data, list) and len(data) > 0:
             return data[0]
         if isinstance(data, dict) and "uniqid" in data:
             return data
-        # {"success": true, "0": {...}} 形式の可能性も
         items = parse_dict_response(data)
-        if items:
-            return items[0]
-        return None
+        return items[0] if items else None
     except Exception as e:
         print(f"[ERROR] ueuse取得失敗 ({uniqid}): {e}")
         return None
 
 def post_reply(text: str, reply_to_uniqid: str) -> bool:
-    """返信を投稿する"""
     url = f"{DOMAIN}/api/ueuse/create"
-    payload = {
-        "token": TOKEN,
-        "text": text,
-        "replyid": reply_to_uniqid,
-    }
     try:
-        res = requests.post(url, json=payload, timeout=10)
+        res = requests.post(url, json={"token": TOKEN, "text": text, "replyid": reply_to_uniqid}, timeout=10)
         res.raise_for_status()
         result = res.json()
         print(f"[OK] 返信投稿成功 → uniqid: {result.get('uniqid')} / 内容: {text[:60]}")
@@ -156,7 +141,6 @@ def post_reply(text: str, reply_to_uniqid: str) -> bool:
         return False
 
 def mark_notifications_read():
-    """通知を一括既読にする"""
     url = f"{DOMAIN}/api/me/notification/read"
     try:
         res = requests.post(url, json={"token": TOKEN}, timeout=10)
@@ -166,13 +150,13 @@ def mark_notifications_read():
         print(f"[WARN] 既読化失敗: {e}")
 
 # ============================================================
-# Gemini API
+# Gemini API（gemini-1.5-flash：無料枠が多い）
 # ============================================================
 def ask_gemini(question: str) -> str:
     try:
         client = genai.Client(api_key=GEMINI_KEY)
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-1.5-flash",
             contents=question,
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_PROMPT,
@@ -185,10 +169,10 @@ def ask_gemini(question: str) -> str:
         return answer
     except Exception as e:
         print(f"[ERROR] Gemini 呼び出し失敗: {e}")
-        return "うまく考えられませんでした…もう一度試してみてください(´・ω・`)"
+        return None  # Noneを返してエラー時は投稿しない
 
 # ============================================================
-# 共通：1件のユーズを処理して返信
+# 1件のユーズを処理して返信
 # ============================================================
 def process_ueuse(uniqid: str, text: str, sender: str, processed: set) -> bool:
     if uniqid in processed:
@@ -206,13 +190,20 @@ def process_ueuse(uniqid: str, text: str, sender: str, processed: set) -> bool:
         question = "何かご用でしょうか？"
 
     answer = ask_gemini(question)
+
+    # Geminiがエラーの場合は投稿せず、処理済みにもしない（次回リトライできるように）
+    if answer is None:
+        print(f"[WARN] Geminiエラーのため {uniqid} はスキップ（次回リトライ）")
+        return False
+
     reply_text = f"@{sender} {answer}"
     if len(reply_text) > 1000:
         reply_text = reply_text[:997] + "..."
 
-    post_reply(reply_text, uniqid)
+    success = post_reply(reply_text, uniqid)
+    # 投稿成功・失敗にかかわらず処理済みに追加（二重返信防止）
     processed.add(uniqid)
-    return True
+    return success
 
 # ============================================================
 # メイン処理
@@ -234,49 +225,35 @@ def main():
     processed = load_processed()
     replied_count = 0
 
-    # ── 方法①：mentionsAPI ──────────────────────────────────
+    # 方法①：mentionsAPI
     mentions = get_mentions()
     print(f"[INFO] mentionsAPI 件数: {len(mentions)}")
-
-    mention_uniqids = set()  # 方法②との重複スキップ用
+    mention_uniqids = set()
     for use in mentions:
         uniqid  = str(use.get("uniqid", ""))
         text    = use.get("text", "")
-        account = use.get("account", {})
-        sender  = account.get("userid", "")
+        sender  = use.get("account", {}).get("userid", "")
         if not uniqid:
             continue
         mention_uniqids.add(uniqid)
         if process_ueuse(uniqid, text, sender, processed):
             replied_count += 1
 
-    # ── 方法②：通知API（mentionsAPIで拾えなかったものの保険）──
+    # 方法②：通知API（フォールバック）
     notifications = get_notifications()
     print(f"[INFO] 通知API（mention/reply）件数: {len(notifications)}")
-
     for n in notifications:
         valueid = str(n.get("valueid", ""))
-        if not valueid:
-            print(f"[WARN] valueidなし: {n}")
-            continue
-
-        # mentionsAPIで既に処理済みならスキップ
-        if valueid in mention_uniqids or valueid in processed:
+        if not valueid or valueid in mention_uniqids or valueid in processed:
             print(f"[SKIP] 既処理/処理済み: {valueid}")
             continue
-
-        # valueidからユーズ本文を取得
         use = get_ueuse(valueid)
         if not use:
-            # ユーズ取得失敗でも processed に入れて二重処理を防ぐ
             processed.add(valueid)
             continue
-
         uniqid  = str(use.get("uniqid", valueid))
         text    = use.get("text", "")
-        account = use.get("account", {})
-        sender  = account.get("userid", "")
-
+        sender  = use.get("account", {}).get("userid", "")
         if not uniqid:
             continue
         if process_ueuse(uniqid, text, sender, processed):
@@ -284,7 +261,11 @@ def main():
 
     print(f"[INFO] 返信完了: {replied_count} 件")
     mark_notifications_read()
+
+    # 処理済みIDをファイルに保存 → Gitにコミット（永続化）
     save_processed(processed)
+    git_commit_processed()
+
     print("[INFO] ===== Bot 処理完了 =====")
 
 if __name__ == "__main__":
