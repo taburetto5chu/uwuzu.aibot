@@ -56,64 +56,87 @@ def save_processed(ids: set):
         json.dump(recent, f)
 
 def clean_mention(text: str) -> str:
+    """@uwuzu_GPT を除去して質問文だけ取り出す"""
     cleaned = re.sub(r"@uwuzu_GPT\b", "", text, flags=re.IGNORECASE)
     return cleaned.strip()
+
+def parse_dict_response(data) -> list:
+    """
+    uwuzuのAPIは {"success": true, "0": {...}, "1": {...}} 形式で返してくる。
+    数字キーの値だけをリストにして返す。
+    """
+    if isinstance(data, list):
+        return data
+    if not isinstance(data, dict):
+        return []
+    result = []
+    for key, val in data.items():
+        if key == "success":
+            continue
+        if isinstance(val, dict):
+            result.append(val)
+    return result
 
 # ============================================================
 # uwuzu API 操作
 # ============================================================
 def get_mentions() -> list:
+    """
+    /api/ueuse/mentions でメンション一覧を取得する。
+    レスポンスは {"success": true, "0": {...}, ...} 形式。
+    """
     url = f"{DOMAIN}/api/ueuse/mentions"
     try:
         res = requests.post(url, json={"token": TOKEN, "limit": 25}, timeout=10)
         res.raise_for_status()
         data = res.json()
-        print(f"[DEBUG] mentions API raw: {str(data)[:200]}")
-        if isinstance(data, list):
-            return data
-        return []
+        print(f"[DEBUG] mentions API raw: {str(data)[:300]}")
+        return parse_dict_response(data)
     except Exception as e:
-        print(f"[WARN] mentionsAPI失敗（サーバーが古い可能性）: {e}")
+        print(f"[WARN] mentionsAPI失敗: {e}")
         return []
 
 def get_notifications() -> list:
+    """
+    /api/me/notification/ で通知一覧を取得し、
+    mention/reply カテゴリのものだけ返す。
+    """
     url = f"{DOMAIN}/api/me/notification/"
     try:
         res = requests.post(url, json={"token": TOKEN, "limit": 50}, timeout=10)
         res.raise_for_status()
         data = res.json()
-        print(f"[DEBUG] notification API raw: {str(data)[:300]}")
-
-        results = []
-        if not isinstance(data, dict):
-            return []
-        for key, n in data.items():
-            if key == "success":
-                continue
-            if not isinstance(n, dict):
-                continue
-            category = n.get("category", "")
-            if category in ("reply", "mention"):
-                results.append(n)
-        return results
+        print(f"[DEBUG] notification API raw: {str(data)[:400]}")
+        items = parse_dict_response(data)
+        return [n for n in items if n.get("category") in ("reply", "mention")]
     except Exception as e:
         print(f"[ERROR] 通知API失敗: {e}")
         return []
 
 def get_ueuse(uniqid: str) -> dict | None:
+    """特定のユーズ（投稿）を取得する"""
     url = f"{DOMAIN}/api/ueuse/get"
     try:
         res = requests.post(url, json={"token": TOKEN, "uniqid": uniqid}, timeout=10)
         res.raise_for_status()
         data = res.json()
+        print(f"[DEBUG] get_ueuse({uniqid}) raw: {str(data)[:200]}")
+        # レスポンスはリストまたは辞書の可能性がある
         if isinstance(data, list) and len(data) > 0:
             return data[0]
+        if isinstance(data, dict) and "uniqid" in data:
+            return data
+        # {"success": true, "0": {...}} 形式の可能性も
+        items = parse_dict_response(data)
+        if items:
+            return items[0]
         return None
     except Exception as e:
         print(f"[ERROR] ueuse取得失敗 ({uniqid}): {e}")
         return None
 
 def post_reply(text: str, reply_to_uniqid: str) -> bool:
+    """返信を投稿する"""
     url = f"{DOMAIN}/api/ueuse/create"
     payload = {
         "token": TOKEN,
@@ -124,7 +147,7 @@ def post_reply(text: str, reply_to_uniqid: str) -> bool:
         res = requests.post(url, json=payload, timeout=10)
         res.raise_for_status()
         result = res.json()
-        print(f"[OK] 返信投稿成功 → uniqid: {result.get('uniqid')} / 内容: {text[:40]}")
+        print(f"[OK] 返信投稿成功 → uniqid: {result.get('uniqid')} / 内容: {text[:60]}")
         return True
     except Exception as e:
         print(f"[ERROR] 返信投稿失敗: {e}")
@@ -133,6 +156,7 @@ def post_reply(text: str, reply_to_uniqid: str) -> bool:
         return False
 
 def mark_notifications_read():
+    """通知を一括既読にする"""
     url = f"{DOMAIN}/api/me/notification/read"
     try:
         res = requests.post(url, json={"token": TOKEN}, timeout=10)
@@ -142,7 +166,7 @@ def mark_notifications_read():
         print(f"[WARN] 既読化失敗: {e}")
 
 # ============================================================
-# Gemini API（新パッケージ google-genai）
+# Gemini API
 # ============================================================
 def ask_gemini(question: str) -> str:
     try:
@@ -156,8 +180,8 @@ def ask_gemini(question: str) -> str:
             ),
         )
         answer = response.text.strip()
-        if len(answer) > 500:
-            answer = answer[:490] + "..."
+        if len(answer) > 200:
+            answer = answer[:197] + "..."
         return answer
     except Exception as e:
         print(f"[ERROR] Gemini 呼び出し失敗: {e}")
@@ -210,9 +234,11 @@ def main():
     processed = load_processed()
     replied_count = 0
 
-    # 方法①：mentionsAPI（v1.6.0以降のサーバー向け）
+    # ── 方法①：mentionsAPI ──────────────────────────────────
     mentions = get_mentions()
     print(f"[INFO] mentionsAPI 件数: {len(mentions)}")
+
+    mention_uniqids = set()  # 方法②との重複スキップ用
     for use in mentions:
         uniqid  = str(use.get("uniqid", ""))
         text    = use.get("text", "")
@@ -220,24 +246,37 @@ def main():
         sender  = account.get("userid", "")
         if not uniqid:
             continue
+        mention_uniqids.add(uniqid)
         if process_ueuse(uniqid, text, sender, processed):
             replied_count += 1
 
-    # 方法②：通知API（mentionsAPIが使えない場合のフォールバック）
+    # ── 方法②：通知API（mentionsAPIで拾えなかったものの保険）──
     notifications = get_notifications()
     print(f"[INFO] 通知API（mention/reply）件数: {len(notifications)}")
+
     for n in notifications:
         valueid = str(n.get("valueid", ""))
-        if not valueid or valueid in processed:
+        if not valueid:
+            print(f"[WARN] valueidなし: {n}")
             continue
+
+        # mentionsAPIで既に処理済みならスキップ
+        if valueid in mention_uniqids or valueid in processed:
+            print(f"[SKIP] 既処理/処理済み: {valueid}")
+            continue
+
+        # valueidからユーズ本文を取得
         use = get_ueuse(valueid)
         if not use:
+            # ユーズ取得失敗でも processed に入れて二重処理を防ぐ
             processed.add(valueid)
             continue
+
         uniqid  = str(use.get("uniqid", valueid))
         text    = use.get("text", "")
         account = use.get("account", {})
         sender  = account.get("userid", "")
+
         if not uniqid:
             continue
         if process_ueuse(uniqid, text, sender, processed):
