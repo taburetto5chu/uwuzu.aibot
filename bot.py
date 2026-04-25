@@ -18,21 +18,16 @@ OPENROUTER_KEY   = os.getenv("OPENROUTER_API_KEY", "")
 BOT_USERID = "uwuzu_GPT"
 PROCESSED_FILE = "processed_ids.json"
 
-# Geminiモデルの優先順位
 GEMINI_MODELS = [
     "gemini-2.0-flash",
     "gemini-2.0-flash-lite",
     "gemini-2.5-flash-preview-04-17",
 ]
-
-# Groqモデルの優先順位（高性能順）
 GROQ_MODELS = [
-    "llama-3.3-70b-versatile",   # Llama 3.3 70B（最高性能）
-    "llama3-8b-8192",            # Llama 3 8B（軽量・枠多め）
-    "gemma2-9b-it",              # Gemma2 9B
+    "llama-3.3-70b-versatile",
+    "llama3-8b-8192",
+    "gemma2-9b-it",
 ]
-
-# OpenRouterの無料モデル（:free 付きが無料）
 OPENROUTER_MODELS = [
     "meta-llama/llama-3.3-70b-instruct:free",
     "deepseek/deepseek-r1:free",
@@ -40,21 +35,55 @@ OPENROUTER_MODELS = [
 ]
 
 # ============================================================
-# 淫夢語録 + 迫真空手部キーワード（暴走モードのトリガー）
+# 暴走モード確定キーワード（リストに含まれれば即暴走）
 # ============================================================
-INMU_KEYWORDS = [
-    # 淫夢語録
-    "淫夢", "ホモ", "ホモクソ", "ﾎﾓｸﾞｳ", "なんで？", "そうだよ(便乗)",
-    "好きでたまらない", "NG集", "本物", "野獣先輩", "いいよ来いよ",
+INMU_DEFINITE_KEYWORDS = [
+    "ぬわあああああん疲れたもおおおおおん",
+    "ﾁｶﾚﾀ…（小声）",
+    "ﾁｶﾚﾀ",
+    "あくしろよ",
+    "頭にきますよ",
+    "この辺にぃ、うまいラーメン屋の屋台、来てるらしいっすよ",
+    "じゃけん夜行きましょうね",
+    "おっ、そうだな",
+    "お前さっき俺ら着替えてる時チラチラ見てただろ",
+    "嘘つけ絶対見てたゾ",
+    "そうだよ（便乗）",
+    "そうだよ(便乗)",
+    "見たけりゃ見せてやるよ",
+    "見ろよ見ろよ",
+    "いいゾ～これ",
+    "いいゾ~これ",
+    "おかのした",
+    "やべぇよ…やべぇよ…",
+    "やべぇよ",
+    "オナシャス",
+    "こ↑こ↓",
+    "入って、どうぞ！",
+    "あ～、いいっすね～",
+    "†悔い改めて†",
+    "悔い改めて",
+    "ま、多少はね？",
+    "ま、多少はね",
+    "サッー！（迫真）",
+    "サッー",
+    "おまたせ！",
+    "おまたせ",
+    "アイスティーしかなかったけどいいかな",
+    "これもうわかんねぇな",
+    "まずいですよ！",
+    "まずいですよ",
+    "お前のことが好きだったんだよ！",
+    "お前のことが好きだったんだよ",
+    # 旧来のキーワードも残す
+    "淫夢", "ホモ", "ホモクソ", "ﾎﾓｸﾞｳ",
+    "好きでたまらない", "NG集", "野獣先輩", "いいよ来いよ",
     "大丈夫だ問題ない", "俺の肛門", "真夏の夜の淫夢",
-    "おっ！そうだな", "ファッ!?", "許してやる", "許さない",
-    "君のことが好き", "何でそんなに", "草不可避", "一般人",
-    "オカズ", "兄貴", "先輩",
-    # 迫真空手部シリーズ
-    "迫真空手部", "秘孔", "突いてしまった", "入部届", "道場",
-    "空手部", "弟子", "師匠", "裏技", "バグ", "それはない",
-    "覇気", "気功", "真の実力", "全力", "本気を出す",
-    "迫真", "部員",
+    "ファッ!?", "許してやる", "許さない",
+    "草不可避", "一般人", "兄貴",
+    "迫真空手部", "秘孔", "突いてしまった", "入部届",
+    "空手部", "弟子", "師匠", "裏技",
+    "覇気", "気功", "真の実力",
 ]
 
 # ============================================================
@@ -94,6 +123,26 @@ SYSTEM_PROMPT_INMU = """
 """
 
 # ============================================================
+# AI判定用プロンプト（語録かどうか判定させる）
+# ============================================================
+JUDGE_PROMPT_TEMPLATE = """
+あなたは「淫夢語録」「迫真空手部語録」の専門家です。
+以下のテキストが淫夢語録・迫真空手部語録・またはそれに関連するネタ・ノリを含んでいるかどうかを判定してください。
+
+【判定基準】
+- 淫夢（真夏の夜の淫夢）のセリフや雰囲気を含む → YES
+- 迫真空手部シリーズのセリフや雰囲気を含む → YES
+- 上記ネタへの返しや合いの手として使われる表現 → YES
+- 完全に無関係の普通の日本語 → NO
+
+【テキスト】
+{text}
+
+【回答形式】
+必ず "YES" か "NO" の1単語だけで答えてください。説明不要です。
+"""
+
+# ============================================================
 # ユーティリティ
 # ============================================================
 def load_processed() -> set:
@@ -127,9 +176,11 @@ def clean_mention(text: str) -> str:
     cleaned = re.sub(r"@uwuzu_GPT\b", "", text, flags=re.IGNORECASE)
     return cleaned.strip()
 
-def is_inmu_mode(text: str) -> bool:
-    for keyword in INMU_KEYWORDS:
+def is_definite_inmu(text: str) -> bool:
+    """確定キーワードリストに一致するか判定"""
+    for keyword in INMU_DEFINITE_KEYWORDS:
         if keyword in text:
+            print(f"[INFO] 確定キーワード検出:「{keyword}」→ 暴走モード確定")
             return True
     return False
 
@@ -215,9 +266,9 @@ def mark_notifications_read():
         print(f"[WARN] 既読化失敗: {e}")
 
 # ============================================================
-# AI API① Gemini
+# AI API共通呼び出し（Gemini / Groq / OpenRouter）
 # ============================================================
-def ask_gemini(question: str, system: str, max_chars: int, max_tokens: int) -> str | None:
+def ask_gemini(prompt: str, system: str, max_chars: int, max_tokens: int) -> str | None:
     if not GEMINI_KEY:
         return None
     client = genai.Client(api_key=GEMINI_KEY)
@@ -226,15 +277,13 @@ def ask_gemini(question: str, system: str, max_chars: int, max_tokens: int) -> s
             print(f"[INFO] Gemini試行: {model_name}")
             response = client.models.generate_content(
                 model=model_name,
-                contents=question,
+                contents=prompt,
                 config=types.GenerateContentConfig(
                     system_instruction=system,
                     max_output_tokens=max_tokens,
                 ),
             )
-            answer = trim_answer(response.text, max_chars)
-            print(f"[OK] Gemini成功: {model_name} / {len(answer)}文字")
-            return answer
+            return trim_answer(response.text, max_chars)
         except Exception as e:
             err = str(e)
             if "429" in err:
@@ -242,57 +291,40 @@ def ask_gemini(question: str, system: str, max_chars: int, max_tokens: int) -> s
             elif "404" in err:
                 print(f"[WARN] Gemini {model_name}: モデル不存在 → 次へ")
             else:
-                print(f"[WARN] Gemini {model_name} 失敗: {err[:100]}")
-    print("[WARN] Gemini全モデル失敗")
+                print(f"[WARN] Gemini {model_name}: {err[:80]}")
     return None
 
-# ============================================================
-# AI API② Groq（OpenAI互換・高速・無料枠大）
-# ============================================================
-def ask_groq(question: str, system: str, max_chars: int, max_tokens: int) -> str | None:
+def ask_groq(prompt: str, system: str, max_chars: int, max_tokens: int) -> str | None:
     if not GROQ_KEY:
-        print("[SKIP] GROQ_API_KEY未設定")
         return None
     for model_name in GROQ_MODELS:
         try:
             print(f"[INFO] Groq試行: {model_name}")
             res = requests.post(
                 "https://api.groq.com/openai/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {GROQ_KEY}",
-                    "Content-Type": "application/json",
-                },
+                headers={"Authorization": f"Bearer {GROQ_KEY}", "Content-Type": "application/json"},
                 json={
                     "model": model_name,
                     "max_tokens": max_tokens,
                     "messages": [
                         {"role": "system", "content": system},
-                        {"role": "user",   "content": question},
+                        {"role": "user", "content": prompt},
                     ],
                 },
                 timeout=30,
             )
             res.raise_for_status()
-            answer = trim_answer(res.json()["choices"][0]["message"]["content"], max_chars)
-            print(f"[OK] Groq成功: {model_name} / {len(answer)}文字")
-            return answer
+            return trim_answer(res.json()["choices"][0]["message"]["content"], max_chars)
         except Exception as e:
             err = str(e)
             if "429" in err:
                 print(f"[WARN] Groq {model_name}: 無料枠枯渇 → 次へ")
-            elif "404" in err:
-                print(f"[WARN] Groq {model_name}: モデル不存在 → 次へ")
             else:
-                print(f"[WARN] Groq {model_name} 失敗: {err[:100]}")
-    print("[WARN] Groq全モデル失敗")
+                print(f"[WARN] Groq {model_name}: {err[:80]}")
     return None
 
-# ============================================================
-# AI API③ OpenRouter（無料モデル多数・最終砦）
-# ============================================================
-def ask_openrouter(question: str, system: str, max_chars: int, max_tokens: int) -> str | None:
+def ask_openrouter(prompt: str, system: str, max_chars: int, max_tokens: int) -> str | None:
     if not OPENROUTER_KEY:
-        print("[SKIP] OPENROUTER_API_KEY未設定")
         return None
     for model_name in OPENROUTER_MODELS:
         try:
@@ -310,51 +342,71 @@ def ask_openrouter(question: str, system: str, max_chars: int, max_tokens: int) 
                     "max_tokens": max_tokens,
                     "messages": [
                         {"role": "system", "content": system},
-                        {"role": "user",   "content": question},
+                        {"role": "user", "content": prompt},
                     ],
                 },
                 timeout=30,
             )
             res.raise_for_status()
-            answer = trim_answer(res.json()["choices"][0]["message"]["content"], max_chars)
-            print(f"[OK] OpenRouter成功: {model_name} / {len(answer)}文字")
-            return answer
+            return trim_answer(res.json()["choices"][0]["message"]["content"], max_chars)
         except Exception as e:
             err = str(e)
             if "429" in err:
                 print(f"[WARN] OpenRouter {model_name}: 枠枯渇 → 次へ")
             else:
-                print(f"[WARN] OpenRouter {model_name} 失敗: {err[:100]}")
-    print("[WARN] OpenRouter全モデル失敗")
+                print(f"[WARN] OpenRouter {model_name}: {err[:80]}")
+    return None
+
+def call_ai(prompt: str, system: str, max_chars: int, max_tokens: int) -> str | None:
+    """Gemini → Groq → OpenRouter の順でフォールバック"""
+    answer = ask_gemini(prompt, system, max_chars, max_tokens)
+    if answer:
+        return answer
+    answer = ask_groq(prompt, system, max_chars, max_tokens)
+    if answer:
+        return answer
+    answer = ask_openrouter(prompt, system, max_chars, max_tokens)
+    if answer:
+        return answer
     return None
 
 # ============================================================
-# AI統合呼び出し（Gemini → Groq → OpenRouter の順）
+# 暴走モード判定（ハイブリッド方式）
+# ============================================================
+def judge_inmu_mode(text: str) -> bool:
+    """
+    Step1: 確定キーワードリストに一致 → 即True
+    Step2: AIに「これは淫夢・迫真空手部語録か？」を判定させる
+    """
+    # Step1: 確定キーワード判定
+    if is_definite_inmu(text):
+        return True
+
+    # Step2: AI判定（短いシステムプロンプトで軽量に判定）
+    print("[INFO] AIによる語録判定を実行中...")
+    judge_prompt = JUDGE_PROMPT_TEMPLATE.format(text=text)
+    judge_system = "あなたは淫夢語録・迫真空手部語録の専門家です。YESかNOの1単語だけ答えます。"
+
+    result = call_ai(judge_prompt, judge_system, max_chars=10, max_tokens=5)
+
+    if result is None:
+        print("[WARN] AI判定失敗 → 通常モードで処理")
+        return False
+
+    is_inmu = result.strip().upper().startswith("YES")
+    print(f"[INFO] AI語録判定結果: {result.strip()} → {'暴走モード' if is_inmu else '通常モード'}")
+    return is_inmu
+
+# ============================================================
+# 返答生成
 # ============================================================
 def ask_ai(question: str, inmu: bool) -> str | None:
     system    = SYSTEM_PROMPT_INMU if inmu else SYSTEM_PROMPT_NORMAL
     max_chars = 700 if inmu else 200
     max_tokens = 700 if inmu else 300
     mode = "【暴走モード】" if inmu else "【通常モード】"
-    print(f"[INFO] AI呼び出し {mode}")
-
-    # ① Gemini（主力・1日1500リクエスト）
-    answer = ask_gemini(question, system, max_chars, max_tokens)
-    if answer:
-        return answer
-
-    # ② Groq（バックアップ・1日1000〜14400リクエスト）
-    answer = ask_groq(question, system, max_chars, max_tokens)
-    if answer:
-        return answer
-
-    # ③ OpenRouter（最終砦・1日200リクエスト・無料モデル）
-    answer = ask_openrouter(question, system, max_chars, max_tokens)
-    if answer:
-        return answer
-
-    print("[ERROR] Gemini・Groq・OpenRouter 全て失敗。")
-    return None
+    print(f"[INFO] 返答生成 {mode}")
+    return call_ai(question, system, max_chars, max_tokens)
 
 # ============================================================
 # 1件のユーズを処理して返信
@@ -374,9 +426,8 @@ def process_ueuse(uniqid: str, text: str, sender: str, processed: set) -> bool:
     if not question:
         question = "何かご用でしょうか？"
 
-    inmu = is_inmu_mode(text)
-    if inmu:
-        print("[INFO] 淫夢/迫真空手部語録検出 → 暴走モード（700文字）")
+    # ハイブリッド判定で暴走モードかどうか決める
+    inmu = judge_inmu_mode(text)
 
     answer = ask_ai(question, inmu)
     if answer is None:
