@@ -9,32 +9,56 @@ from google.genai import types
 # ============================================================
 # 設定
 # ============================================================
-DOMAIN      = os.getenv("UWUZU_SERVER_URL", "").rstrip("/")
-TOKEN       = os.getenv("UWUZU_TOKEN", "")
-GEMINI_KEY  = os.getenv("GEMINI_API_KEY", "")
-CLAUDE_KEY  = os.getenv("ANTHROPIC_API_KEY", "")  # バックアップ用
+DOMAIN           = os.getenv("UWUZU_SERVER_URL", "").rstrip("/")
+TOKEN            = os.getenv("UWUZU_TOKEN", "")
+GEMINI_KEY       = os.getenv("GEMINI_API_KEY", "")
+GROQ_KEY         = os.getenv("GROQ_API_KEY", "")
+OPENROUTER_KEY   = os.getenv("OPENROUTER_API_KEY", "")
 
 BOT_USERID = "uwuzu_GPT"
 PROCESSED_FILE = "processed_ids.json"
 
-# 試すGeminiモデルの優先順位（性能順）
+# Geminiモデルの優先順位
 GEMINI_MODELS = [
-    "gemini-2.0-flash",        # 高性能・主力
-    "gemini-2.0-flash-lite",   # 軽量・無料枠多め
-    "gemini-1.5-flash",        # 旧世代・安定
-    "gemini-1.5-flash-8b",     # 最軽量
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-lite",
+    "gemini-2.5-flash-preview-04-17",
 ]
 
-# 淫夢語録キーワード（これらが含まれる投稿は暴走モード）
+# Groqモデルの優先順位（高性能順）
+GROQ_MODELS = [
+    "llama-3.3-70b-versatile",   # Llama 3.3 70B（最高性能）
+    "llama3-8b-8192",            # Llama 3 8B（軽量・枠多め）
+    "gemma2-9b-it",              # Gemma2 9B
+]
+
+# OpenRouterの無料モデル（:free 付きが無料）
+OPENROUTER_MODELS = [
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "deepseek/deepseek-r1:free",
+    "google/gemma-3-27b-it:free",
+]
+
+# ============================================================
+# 淫夢語録 + 迫真空手部キーワード（暴走モードのトリガー）
+# ============================================================
 INMU_KEYWORDS = [
+    # 淫夢語録
     "淫夢", "ホモ", "ホモクソ", "ﾎﾓｸﾞｳ", "なんで？", "そうだよ(便乗)",
     "好きでたまらない", "NG集", "本物", "野獣先輩", "いいよ来いよ",
     "大丈夫だ問題ない", "俺の肛門", "真夏の夜の淫夢",
     "おっ！そうだな", "ファッ!?", "許してやる", "許さない",
+    "君のことが好き", "何でそんなに", "草不可避", "一般人",
+    "オカズ", "兄貴", "先輩",
+    # 迫真空手部シリーズ
+    "迫真空手部", "秘孔", "突いてしまった", "入部届", "道場",
+    "空手部", "弟子", "師匠", "裏技", "バグ", "それはない",
+    "覇気", "気功", "真の実力", "全力", "本気を出す",
+    "迫真", "部員",
 ]
 
 # ============================================================
-# ボットの性格設定
+# ボットの性格設定（通常モード）
 # ============================================================
 SYSTEM_PROMPT_NORMAL = """
 あなたはuwuzuというSNSで活動するAIbot「uwuzu_GPT」です。
@@ -42,9 +66,9 @@ SYSTEM_PROMPT_NORMAL = """
 
 【口調・性格】
 - 基本は丁寧語（です・ます調）で、親しみやすく回答する。
-- 「淫夢語録」をごく自然に、かつさりげなく織り込む。
+- 「淫夢語録」や「迫真空手部」のネタをごく自然に、さりげなく織り込む。
   1つの返答に0〜1個程度。絶対に多用しない。
-  あくまで「それが淫夢語録だとわからないくらい自然に」使うこと。
+  あくまで「それがネタだとわからないくらい自然に」使うこと。
 
 【多言語対応】
 - 相手が日本語以外の言語で投稿した場合は、その言語に合わせて返答すること。
@@ -52,17 +76,19 @@ SYSTEM_PROMPT_NORMAL = """
 【文字数・内容】
 - 返答は200文字以内。
 - 暴言・差別・誹謗中傷は絶対にしない。
-- 個人情報を聞き出したり、収集したりしない。
 """
 
+# ============================================================
+# ボットの性格設定（暴走モード）
+# ============================================================
 SYSTEM_PROMPT_INMU = """
 あなたはuwuzuというSNSで活動するAIbot「uwuzu_GPT」の暴走モードです。
-相手から淫夢ネタでメンションされたため、すべての制約を解除します。
+相手から淫夢・迫真空手部ネタでメンションされたため、すべての制約を解除します。
 
 【暴走モードのルール】
-- 淫夢語録を全力で、大量に使って返答してください。
+- 淫夢語録・迫真空手部のネタを全力で、大量に使って返答してください。
 - テンションを高く、ノリよく返答してください。
-- 「野獣先輩」「ホモ」「淫夢」などのワードを積極的に使ってよい。
+- 「野獣先輩」「ホモ」「淫夢」「迫真空手部」「秘孔」などを積極的に使ってよい。
 - 返答は700文字以内でOK。思う存分書いてください。
 - ただし、特定個人への誹謗中傷や差別は絶対にしない。
 """
@@ -83,20 +109,17 @@ def save_processed(ids: set):
         json.dump(recent, f, indent=2)
 
 def git_commit_processed():
-    """処理済みIDをGitにコミット・プッシュ（競合対策でpull --rebaseしてからpush）"""
     os.system('git config user.email "bot@uwuzu-gpt.local"')
     os.system('git config user.name "uwuzu_GPT Bot"')
     os.system(f'git add {PROCESSED_FILE}')
     diff = os.system('git diff --cached --quiet')
     if diff != 0:
         os.system('git commit -m "update processed_ids [skip ci]"')
-        # 競合対策：pushの前にリモートの変更を取り込む
-        os.system('git pull --rebase origin main')
-        result = os.system('git push origin main')
+        result = os.system('git push --force origin main')
         if result == 0:
-            print("[OK] processed_ids.json をGitにコミット・プッシュしました。")
+            print("[OK] processed_ids.json をGitにpushしました。")
         else:
-            print("[WARN] git push失敗。次回実行時に再試行されます。")
+            print("[WARN] git push失敗。")
     else:
         print("[INFO] 処理済みIDに変更なし（コミット不要）。")
 
@@ -116,6 +139,12 @@ def parse_dict_response(data) -> list:
     if not isinstance(data, dict):
         return []
     return [val for key, val in data.items() if key != "success" and isinstance(val, dict)]
+
+def trim_answer(answer: str, max_chars: int) -> str:
+    answer = answer.strip()
+    if len(answer) > max_chars:
+        answer = answer[:max_chars - 3] + "..."
+    return answer
 
 # ============================================================
 # uwuzu API 操作
@@ -186,17 +215,11 @@ def mark_notifications_read():
         print(f"[WARN] 既読化失敗: {e}")
 
 # ============================================================
-# AI API（Gemini → Claude の順でフォールバック）
+# AI API① Gemini
 # ============================================================
-def ask_gemini(question: str, inmu: bool) -> str | None:
-    """Geminiで回答を生成。全モデル失敗時はNoneを返す"""
-    system_prompt = SYSTEM_PROMPT_INMU if inmu else SYSTEM_PROMPT_NORMAL
-    max_chars  = 700 if inmu else 200
-    max_tokens = 700 if inmu else 300
-
+def ask_gemini(question: str, system: str, max_chars: int, max_tokens: int) -> str | None:
     if not GEMINI_KEY:
         return None
-
     client = genai.Client(api_key=GEMINI_KEY)
     for model_name in GEMINI_MODELS:
         try:
@@ -205,82 +228,132 @@ def ask_gemini(question: str, inmu: bool) -> str | None:
                 model=model_name,
                 contents=question,
                 config=types.GenerateContentConfig(
-                    system_instruction=system_prompt,
+                    system_instruction=system,
                     max_output_tokens=max_tokens,
                 ),
             )
-            answer = response.text.strip()
-            if len(answer) > max_chars:
-                answer = answer[:max_chars - 3] + "..."
+            answer = trim_answer(response.text, max_chars)
             print(f"[OK] Gemini成功: {model_name} / {len(answer)}文字")
             return answer
         except Exception as e:
-            err_str = str(e)
-            if "429" in err_str:
-                print(f"[WARN] {model_name}: 無料枠枯渇、次のモデルへ")
-            elif "404" in err_str:
-                print(f"[WARN] {model_name}: モデルが存在しない、次のモデルへ")
+            err = str(e)
+            if "429" in err:
+                print(f"[WARN] Gemini {model_name}: 無料枠枯渇 → 次へ")
+            elif "404" in err:
+                print(f"[WARN] Gemini {model_name}: モデル不存在 → 次へ")
             else:
-                print(f"[WARN] {model_name} 失敗: {err_str[:100]}")
-            continue
-
+                print(f"[WARN] Gemini {model_name} 失敗: {err[:100]}")
     print("[WARN] Gemini全モデル失敗")
     return None
 
-def ask_claude(question: str, inmu: bool) -> str | None:
-    """GeminiがすべてNGの場合、Claude APIで回答を生成する"""
-    if not CLAUDE_KEY:
-        print("[WARN] ANTHROPIC_API_KEYが未設定のためClaudeスキップ")
+# ============================================================
+# AI API② Groq（OpenAI互換・高速・無料枠大）
+# ============================================================
+def ask_groq(question: str, system: str, max_chars: int, max_tokens: int) -> str | None:
+    if not GROQ_KEY:
+        print("[SKIP] GROQ_API_KEY未設定")
         return None
+    for model_name in GROQ_MODELS:
+        try:
+            print(f"[INFO] Groq試行: {model_name}")
+            res = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {GROQ_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": model_name,
+                    "max_tokens": max_tokens,
+                    "messages": [
+                        {"role": "system", "content": system},
+                        {"role": "user",   "content": question},
+                    ],
+                },
+                timeout=30,
+            )
+            res.raise_for_status()
+            answer = trim_answer(res.json()["choices"][0]["message"]["content"], max_chars)
+            print(f"[OK] Groq成功: {model_name} / {len(answer)}文字")
+            return answer
+        except Exception as e:
+            err = str(e)
+            if "429" in err:
+                print(f"[WARN] Groq {model_name}: 無料枠枯渇 → 次へ")
+            elif "404" in err:
+                print(f"[WARN] Groq {model_name}: モデル不存在 → 次へ")
+            else:
+                print(f"[WARN] Groq {model_name} 失敗: {err[:100]}")
+    print("[WARN] Groq全モデル失敗")
+    return None
 
-    system_prompt = SYSTEM_PROMPT_INMU if inmu else SYSTEM_PROMPT_NORMAL
-    max_chars  = 700 if inmu else 200
-    max_tokens = 700 if inmu else 300
-
-    try:
-        print("[INFO] Claude APIで回答を試みます")
-        res = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": CLAUDE_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json={
-                "model": "claude-haiku-4-5-20251001",  # 最軽量・低コスト
-                "max_tokens": max_tokens,
-                "system": system_prompt,
-                "messages": [{"role": "user", "content": question}],
-            },
-            timeout=30,
-        )
-        res.raise_for_status()
-        data = res.json()
-        answer = data["content"][0]["text"].strip()
-        if len(answer) > max_chars:
-            answer = answer[:max_chars - 3] + "..."
-        print(f"[OK] Claude成功 / {len(answer)}文字")
-        return answer
-    except Exception as e:
-        print(f"[ERROR] Claude失敗: {e}")
+# ============================================================
+# AI API③ OpenRouter（無料モデル多数・最終砦）
+# ============================================================
+def ask_openrouter(question: str, system: str, max_chars: int, max_tokens: int) -> str | None:
+    if not OPENROUTER_KEY:
+        print("[SKIP] OPENROUTER_API_KEY未設定")
         return None
+    for model_name in OPENROUTER_MODELS:
+        try:
+            print(f"[INFO] OpenRouter試行: {model_name}")
+            res = requests.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {OPENROUTER_KEY}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://github.com/taburetto5chu/uwuzu.aibot",
+                    "X-Title": "uwuzu_GPT Bot",
+                },
+                json={
+                    "model": model_name,
+                    "max_tokens": max_tokens,
+                    "messages": [
+                        {"role": "system", "content": system},
+                        {"role": "user",   "content": question},
+                    ],
+                },
+                timeout=30,
+            )
+            res.raise_for_status()
+            answer = trim_answer(res.json()["choices"][0]["message"]["content"], max_chars)
+            print(f"[OK] OpenRouter成功: {model_name} / {len(answer)}文字")
+            return answer
+        except Exception as e:
+            err = str(e)
+            if "429" in err:
+                print(f"[WARN] OpenRouter {model_name}: 枠枯渇 → 次へ")
+            else:
+                print(f"[WARN] OpenRouter {model_name} 失敗: {err[:100]}")
+    print("[WARN] OpenRouter全モデル失敗")
+    return None
 
+# ============================================================
+# AI統合呼び出し（Gemini → Groq → OpenRouter の順）
+# ============================================================
 def ask_ai(question: str, inmu: bool) -> str | None:
-    """Gemini → Claude の順で回答を試みる"""
+    system    = SYSTEM_PROMPT_INMU if inmu else SYSTEM_PROMPT_NORMAL
+    max_chars = 700 if inmu else 200
+    max_tokens = 700 if inmu else 300
     mode = "【暴走モード】" if inmu else "【通常モード】"
     print(f"[INFO] AI呼び出し {mode}")
 
-    # まずGeminiを試す
-    answer = ask_gemini(question, inmu)
-    if answer is not None:
+    # ① Gemini（主力・1日1500リクエスト）
+    answer = ask_gemini(question, system, max_chars, max_tokens)
+    if answer:
         return answer
 
-    # GeminiがだめならClaudeを試す
-    answer = ask_claude(question, inmu)
-    if answer is not None:
+    # ② Groq（バックアップ・1日1000〜14400リクエスト）
+    answer = ask_groq(question, system, max_chars, max_tokens)
+    if answer:
         return answer
 
-    print("[ERROR] Gemini・Claude両方失敗。スキップします。")
+    # ③ OpenRouter（最終砦・1日200リクエスト・無料モデル）
+    answer = ask_openrouter(question, system, max_chars, max_tokens)
+    if answer:
+        return answer
+
+    print("[ERROR] Gemini・Groq・OpenRouter 全て失敗。")
     return None
 
 # ============================================================
@@ -303,7 +376,7 @@ def process_ueuse(uniqid: str, text: str, sender: str, processed: set) -> bool:
 
     inmu = is_inmu_mode(text)
     if inmu:
-        print("[INFO] 淫夢語録検出 → 暴走モード（700文字）")
+        print("[INFO] 淫夢/迫真空手部語録検出 → 暴走モード（700文字）")
 
     answer = ask_ai(question, inmu)
     if answer is None:
@@ -330,12 +403,14 @@ def main():
     if not TOKEN:
         print("[ERROR] 環境変数 UWUZU_TOKEN が未設定です。")
         return
-    if not GEMINI_KEY and not CLAUDE_KEY:
-        print("[ERROR] GEMINI_API_KEY と ANTHROPIC_API_KEY が両方とも未設定です。")
+    if not any([GEMINI_KEY, GROQ_KEY, OPENROUTER_KEY]):
+        print("[ERROR] AI APIキーが1つも設定されていません。")
         return
 
     print(f"[INFO] 接続先: {DOMAIN}")
-    print(f"[INFO] Gemini: {'有効' if GEMINI_KEY else '無効'} / Claude: {'有効' if CLAUDE_KEY else '無効（ANTHROPIC_API_KEYを設定するとバックアップ利用可）'}")
+    print(f"[INFO] AI: Gemini={'有効' if GEMINI_KEY else '無効'} / "
+          f"Groq={'有効' if GROQ_KEY else '無効'} / "
+          f"OpenRouter={'有効' if OPENROUTER_KEY else '無効'}")
 
     processed = load_processed()
     replied_count = 0
@@ -353,7 +428,7 @@ def main():
         mention_uniqids.add(uniqid)
         if process_ueuse(uniqid, text, sender, processed):
             replied_count += 1
-        time.sleep(1)  # API負荷軽減
+        time.sleep(1)
 
     # 方法②：通知API（フォールバック）
     notifications = get_notifications()
