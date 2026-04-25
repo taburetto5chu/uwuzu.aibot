@@ -3,7 +3,6 @@ name: uwuzu Bot Runner
 on:
   workflow_dispatch:
 
-# ★ Gitへのpush（processed_ids.jsonの保存）に必要な権限
 permissions:
   contents: write
 
@@ -15,7 +14,6 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          # pushできるようにトークンを明示
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Python
@@ -36,4 +34,6 @@ jobs:
           UWUZU_SERVER_URL: ${{ secrets.UWUZU_SERVER_URL }}
           UWUZU_TOKEN: ${{ secrets.UWUZU_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: python bot.py
