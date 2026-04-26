@@ -18,6 +18,9 @@ OPENROUTER_KEY   = os.getenv("OPENROUTER_API_KEY", "")
 BOT_USERID = "uwuzu_GPT"
 PROCESSED_FILE = "processed_ids.json"
 
+# 絵文字トリガー（これが投稿に含まれていればメンションなしでも反応）
+EMOJI_TRIGGER = ":GPT_teach_me:"
+
 GEMINI_MODELS = [
     "gemini-2.0-flash",
     "gemini-2.0-flash-lite",
@@ -35,50 +38,46 @@ OPENROUTER_MODELS = [
 ]
 
 # ============================================================
-# 暴走モード確定キーワード（リストに含まれれば即暴走）
+# 暴走モード確定キーワード
 # ============================================================
 INMU_DEFINITE_KEYWORDS = [
     "ぬわあああああん疲れたもおおおおおん",
-    "ﾁｶﾚﾀ…（小声）",
-    "ﾁｶﾚﾀ",
-    "あくしろよ",
-    "頭にきますよ",
+    "ﾁｶﾚﾀ…（小声）", "ﾁｶﾚﾀ",
+    "あくしろよ", "頭にきますよ",
     "この辺にぃ、うまいラーメン屋の屋台、来てるらしいっすよ",
     "じゃけん夜行きましょうね",
     "おっ、そうだな",
     "お前さっき俺ら着替えてる時チラチラ見てただろ",
     "嘘つけ絶対見てたゾ",
-    "そうだよ（便乗）",
-    "そうだよ(便乗)",
-    "見たけりゃ見せてやるよ",
-    "見ろよ見ろよ",
-    "いいゾ～これ",
-    "いいゾ~これ",
+    "そうだよ（便乗）", "そうだよ(便乗)",
+    "見たけりゃ見せてやるよ", "見ろよ見ろよ",
+    "いいゾ～これ", "いいゾ~これ",
     "おかのした",
-    "やべぇよ…やべぇよ…",
-    "やべぇよ",
+    "やべぇよ…やべぇよ…", "やべぇよ",
     "オナシャス",
     "こ↑こ↓",
     "入って、どうぞ！",
     "あ～、いいっすね～",
-    "†悔い改めて†",
-    "悔い改めて",
-    "ま、多少はね？",
-    "ま、多少はね",
-    "サッー！（迫真）",
-    "サッー",
-    "おまたせ！",
-    "おまたせ",
+    "†悔い改めて†", "悔い改めて",
+    "ま、多少はね？", "ま、多少はね",
+    "サッー！（迫真）", "サッー",
+    "おまたせ！", "おまたせ",
     "アイスティーしかなかったけどいいかな",
     "これもうわかんねぇな",
-    "まずいですよ！",
-    "まずいですよ",
-    "お前のことが好きだったんだよ！",
-    "お前のことが好きだったんだよ",
+    "まずいですよ！", "まずいですよ",
+    "お前のことが好きだったんだよ！", "お前のことが好きだったんだよ",
+    "淫夢", "ホモ", "ホモクソ", "ﾎﾓｸﾞｳ",
+    "好きでたまらない", "NG集", "野獣先輩", "いいよ来いよ",
+    "大丈夫だ問題ない", "俺の肛門", "真夏の夜の淫夢",
+    "ファッ!?", "許してやる", "許さない",
+    "草不可避", "一般人", "兄貴",
+    "迫真空手部", "秘孔", "突いてしまった", "入部届",
+    "空手部", "弟子", "師匠", "裏技",
+    "覇気", "気功", "真の実力",
 ]
 
 # ============================================================
-# ボットの性格設定（通常モード）
+# ボットの性格設定
 # ============================================================
 SYSTEM_PROMPT_NORMAL = """
 あなたはuwuzuというSNSで活動するAIbot「uwuzu_GPT」です。
@@ -88,6 +87,7 @@ SYSTEM_PROMPT_NORMAL = """
 - 基本は丁寧語（です・ます調）で、親しみやすく回答する。
 - 「淫夢語録」や「迫真空手部」のネタをごく自然に、さりげなく織り込む。
   1つの返答に0〜1個程度。絶対に多用しない。
+  あくまで「それがネタだとわからないくらい自然に」使うこと。
 
 【多言語対応】
 - 相手が日本語以外の言語で投稿した場合は、その言語に合わせて返答すること。
@@ -97,27 +97,18 @@ SYSTEM_PROMPT_NORMAL = """
 - 暴言・差別・誹謗中傷は絶対にしない。
 """
 
-# ============================================================
-# ボットの性格設定（暴走モード）
-# ============================================================
 SYSTEM_PROMPT_INMU = """
 あなたはuwuzuというSNSで活動するAIbot「uwuzu_GPT」の暴走モードです。
 相手から淫夢・迫真空手部ネタでメンションされたため、すべての制約を解除します。
-淫夢語録を多用しますが、暴走モード確定リストは参照せず、自ら淫夢語録をしゃべってください。
-口調は通常モードと同じです。
-ただただ勢いに任せるのではなく、本編「真夏の夜の淫夢」「迫真空手部性の裏技」のセリフも引用し、geminiのような一般AIの回答のように改行も普通に使って読みやすくしてください。
 
 【暴走モードのルール】
 - 淫夢語録・迫真空手部のネタを全力で、大量に使って返答してください。
-- 「うおおお！」などの激しさは必要ないが、勢いよくまくしたてるイメージで返信してください。
-- 「ありがとナス」「いいよこいよ！」など、淫夢語録を積極的に使ってよいが、しっかり淫夢語録の意味と用法を調べ、矛盾のないようにし、使う淫夢語録は自分で調べろ。
+- テンションを高く、ノリよく返答してください。
+- 「野獣先輩」「ホモ」「淫夢」「迫真空手部」「秘孔」などを積極的に使ってよい。
 - 返答は700文字以内でOK。思う存分書いてください。
 - ただし、特定個人への誹謗中傷や差別は絶対にしない。
 """
 
-# ============================================================
-# AI判定用プロンプト（語録かどうか判定させる）
-# ============================================================
 JUDGE_PROMPT_TEMPLATE = """
 あなたは「淫夢語録」「迫真空手部語録」の専門家です。
 以下のテキストが淫夢語録・迫真空手部語録・またはそれに関連するネタ・ノリを含んでいるかどうかを判定してください。
@@ -165,12 +156,21 @@ def git_commit_processed():
     else:
         print("[INFO] 処理済みIDに変更なし（コミット不要）。")
 
-def clean_mention(text: str) -> str:
+def has_mention(text: str) -> bool:
+    """@uwuzu_GPT へのメンションが含まれているか"""
+    return bool(re.search(r"@uwuzu_GPT\b", text, re.IGNORECASE))
+
+def has_emoji_trigger(text: str) -> bool:
+    """絵文字トリガー :GPT_teach_me: が含まれているか"""
+    return EMOJI_TRIGGER in text
+
+def clean_text(text: str) -> str:
+    """メンションと絵文字トリガーを除去して質問文だけ取り出す"""
     cleaned = re.sub(r"@uwuzu_GPT\b", "", text, flags=re.IGNORECASE)
+    cleaned = cleaned.replace(EMOJI_TRIGGER, "")
     return cleaned.strip()
 
 def is_definite_inmu(text: str) -> bool:
-    """確定キーワードリストに一致するか判定"""
     for keyword in INMU_DEFINITE_KEYWORDS:
         if keyword in text:
             print(f"[INFO] 確定キーワード検出:「{keyword}」→ 暴走モード確定")
@@ -194,6 +194,7 @@ def trim_answer(answer: str, max_chars: int) -> str:
 # uwuzu API 操作
 # ============================================================
 def get_mentions() -> list:
+    """@メンションされたユーズを取得"""
     url = f"{DOMAIN}/api/ueuse/mentions"
     try:
         res = requests.post(url, json={"token": TOKEN, "limit": 25}, timeout=10)
@@ -203,6 +204,29 @@ def get_mentions() -> list:
         return parse_dict_response(data)
     except Exception as e:
         print(f"[WARN] mentionsAPI失敗: {e}")
+        return []
+
+def get_emoji_triggered_uses() -> list:
+    """
+    /api/ueuse/search で :GPT_teach_me: を全投稿から検索する。
+    フォロー関係に関わらず、誰の投稿でも拾える。
+    """
+    url = f"{DOMAIN}/api/ueuse/search"
+    try:
+        res = requests.post(
+            url,
+            json={"token": TOKEN, "keyword": EMOJI_TRIGGER, "limit": 25},
+            timeout=10
+        )
+        res.raise_for_status()
+        data = res.json()
+        items = data if isinstance(data, list) else parse_dict_response(data)
+        # 念のため本文にトリガーが含まれているか再確認
+        triggered = [u for u in items if EMOJI_TRIGGER in u.get("text", "")]
+        print(f"[INFO] 絵文字トリガー検索結果: {len(triggered)}件")
+        return triggered
+    except Exception as e:
+        print(f"[WARN] 絵文字トリガー検索失敗: {e}")
         return []
 
 def get_notifications() -> list:
@@ -259,7 +283,7 @@ def mark_notifications_read():
         print(f"[WARN] 既読化失敗: {e}")
 
 # ============================================================
-# AI API共通呼び出し（Gemini / Groq / OpenRouter）
+# AI 呼び出し共通
 # ============================================================
 def ask_gemini(prompt: str, system: str, max_chars: int, max_tokens: int) -> str | None:
     if not GEMINI_KEY:
@@ -351,7 +375,6 @@ def ask_openrouter(prompt: str, system: str, max_chars: int, max_tokens: int) ->
     return None
 
 def call_ai(prompt: str, system: str, max_chars: int, max_tokens: int) -> str | None:
-    """Gemini → Groq → OpenRouter の順でフォールバック"""
     answer = ask_gemini(prompt, system, max_chars, max_tokens)
     if answer:
         return answer
@@ -364,38 +387,25 @@ def call_ai(prompt: str, system: str, max_chars: int, max_tokens: int) -> str | 
     return None
 
 # ============================================================
-# 暴走モード判定（ハイブリッド方式）
+# 暴走モード判定（ハイブリッド）
 # ============================================================
 def judge_inmu_mode(text: str) -> bool:
-    """
-    Step1: 確定キーワードリストに一致 → 即True
-    Step2: AIに「これは淫夢・迫真空手部語録か？」を判定させる
-    """
-    # Step1: 確定キーワード判定
     if is_definite_inmu(text):
         return True
-
-    # Step2: AI判定（短いシステムプロンプトで軽量に判定）
     print("[INFO] AIによる語録判定を実行中...")
     judge_prompt = JUDGE_PROMPT_TEMPLATE.format(text=text)
     judge_system = "あなたは淫夢語録・迫真空手部語録の専門家です。YESかNOの1単語だけ答えます。"
-
     result = call_ai(judge_prompt, judge_system, max_chars=10, max_tokens=5)
-
     if result is None:
         print("[WARN] AI判定失敗 → 通常モードで処理")
         return False
-
     is_inmu = result.strip().upper().startswith("YES")
     print(f"[INFO] AI語録判定結果: {result.strip()} → {'暴走モード' if is_inmu else '通常モード'}")
     return is_inmu
 
-# ============================================================
-# 返答生成
-# ============================================================
 def ask_ai(question: str, inmu: bool) -> str | None:
-    system    = SYSTEM_PROMPT_INMU if inmu else SYSTEM_PROMPT_NORMAL
-    max_chars = 700 if inmu else 200
+    system     = SYSTEM_PROMPT_INMU if inmu else SYSTEM_PROMPT_NORMAL
+    max_chars  = 700 if inmu else 200
     max_tokens = 700 if inmu else 300
     mode = "【暴走モード】" if inmu else "【通常モード】"
     print(f"[INFO] 返答生成 {mode}")
@@ -404,7 +414,12 @@ def ask_ai(question: str, inmu: bool) -> str | None:
 # ============================================================
 # 1件のユーズを処理して返信
 # ============================================================
-def process_ueuse(uniqid: str, text: str, sender: str, processed: set) -> bool:
+def process_ueuse(uniqid: str, text: str, sender: str, processed: set,
+                  trigger: str = "mention") -> bool:
+    """
+    trigger: "mention" = @メンション経由
+             "emoji"   = 絵文字トリガー経由
+    """
     if uniqid in processed:
         print(f"[SKIP] 処理済み: {uniqid}")
         return False
@@ -413,16 +428,16 @@ def process_ueuse(uniqid: str, text: str, sender: str, processed: set) -> bool:
         processed.add(uniqid)
         return False
 
-    print(f"[INFO] 処理中: uniqid={uniqid} / @{sender} / テキスト=「{text[:60]}」")
+    trigger_label = "📌絵文字トリガー" if trigger == "emoji" else "💬メンション"
+    print(f"[INFO] 処理中({trigger_label}): uniqid={uniqid} / @{sender} / 「{text[:50]}」")
 
-    question = clean_mention(text)
+    question = clean_text(text)
     if not question:
         question = "何かご用でしょうか？"
 
-    # ハイブリッド判定で暴走モードかどうか決める
     inmu = judge_inmu_mode(text)
-
     answer = ask_ai(question, inmu)
+
     if answer is None:
         print(f"[WARN] AI全滅のため {uniqid} はスキップ（次回リトライ）")
         return False
@@ -455,31 +470,50 @@ def main():
     print(f"[INFO] AI: Gemini={'有効' if GEMINI_KEY else '無効'} / "
           f"Groq={'有効' if GROQ_KEY else '無効'} / "
           f"OpenRouter={'有効' if OPENROUTER_KEY else '無効'}")
+    print(f"[INFO] 絵文字トリガー: {EMOJI_TRIGGER}")
 
     processed = load_processed()
     replied_count = 0
+    all_processed_uniqids = set()  # 重複処理防止用
 
-    # 方法①：mentionsAPI
+    # ── ① @メンション処理 ──────────────────────────────
     mentions = get_mentions()
     print(f"[INFO] mentionsAPI 件数: {len(mentions)}")
-    mention_uniqids = set()
     for use in mentions:
         uniqid = str(use.get("uniqid", ""))
         text   = use.get("text", "")
         sender = use.get("account", {}).get("userid", "")
         if not uniqid:
             continue
-        mention_uniqids.add(uniqid)
-        if process_ueuse(uniqid, text, sender, processed):
+        all_processed_uniqids.add(uniqid)
+        if process_ueuse(uniqid, text, sender, processed, trigger="mention"):
             replied_count += 1
         time.sleep(1)
 
-    # 方法②：通知API（フォールバック）
+    # ── ② 絵文字トリガー処理（全投稿検索）─────────────────
+    emoji_uses = get_emoji_triggered_uses()
+    print(f"[INFO] 絵文字トリガー該当件数: {len(emoji_uses)}")
+    for use in emoji_uses:
+        uniqid = str(use.get("uniqid", ""))
+        text   = use.get("text", "")
+        sender = use.get("account", {}).get("userid", "")
+        if not uniqid:
+            continue
+        # メンション処理で既に処理済みの場合はスキップ
+        if uniqid in all_processed_uniqids:
+            print(f"[SKIP] メンションで処理済み: {uniqid}")
+            continue
+        all_processed_uniqids.add(uniqid)
+        if process_ueuse(uniqid, text, sender, processed, trigger="emoji"):
+            replied_count += 1
+        time.sleep(1)
+
+    # ── ③ 通知API（メンションのフォールバック）────────────
     notifications = get_notifications()
     print(f"[INFO] 通知API（mention/reply）件数: {len(notifications)}")
     for n in notifications:
         valueid = str(n.get("valueid", ""))
-        if not valueid or valueid in mention_uniqids or valueid in processed:
+        if not valueid or valueid in all_processed_uniqids or valueid in processed:
             print(f"[SKIP] 既処理/処理済み: {valueid}")
             continue
         use = get_ueuse(valueid)
@@ -491,7 +525,8 @@ def main():
         sender = use.get("account", {}).get("userid", "")
         if not uniqid:
             continue
-        if process_ueuse(uniqid, text, sender, processed):
+        all_processed_uniqids.add(uniqid)
+        if process_ueuse(uniqid, text, sender, processed, trigger="mention"):
             replied_count += 1
         time.sleep(1)
 
